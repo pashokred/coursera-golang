@@ -1,12 +1,10 @@
 package main
 
 import (
+	"fmt"
 	"io"
-	"io/fs"
 	"io/ioutil"
 	"os"
-	"sort"
-	"strconv"
 )
 
 func main() {
@@ -23,24 +21,21 @@ func main() {
 }
 
 func dirTree(out io.Writer, path string, printFiles bool) error {
+	var files []os.FileInfo
 	files, err := ioutil.ReadDir(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("ioutil.ReadDir failed: %w", err)
 	}
 	level := 0
 	var lines []bool
 	err = fillTree(out, path, printFiles, &level, files, lines)
 	if err != nil {
-		return err
+		return fmt.Errorf("fillTree failed: %w", err)
 	}
 	return nil
 }
 
-func fillTree(out io.Writer, path string, printFiles bool, level *int, files []fs.FileInfo, lines []bool) error {
-	sort.Slice(files, func(i, j int) bool {
-		return files[i].Name() <= files[j].Name()
-	})
-
+func fillTree(out io.Writer, path string, printFiles bool, level *int, files []os.FileInfo, lines []bool) error {
 	for index, f := range files {
 		isLastDirectory := func() bool {
 			if printFiles {
@@ -69,23 +64,22 @@ func fillTree(out io.Writer, path string, printFiles bool, level *int, files []f
 			}
 			err := printDirectory(out, printFiles, level, lines, f.Name(), path+"/"+f.Name())
 			if err != nil {
-				return err
+				return fmt.Errorf("printDirectory on level %v and with directory name %s failed: %w", *level, f.Name(), err)
 			}
 		} else if printFiles {
 			err := printFile(out, f)
 			if err != nil {
-				return err
+				return fmt.Errorf("printFIle on level %v and with name %s failed: %w", *level, f.Name(), err)
 			}
 		}
 	}
 	return nil
 }
 
-func printBranch(out io.Writer, printFiles bool, level *int, file fs.FileInfo, isLastIndex bool, lines []bool) error {
+func printBranch(out io.Writer, printFiles bool, level *int, file os.FileInfo, isLastIndex bool, lines []bool) error {
 	fileIsDir := file.IsDir()
 	if fileIsDir || printFiles {
-		elementSign := "├───"
-		lastSign := "└───"
+		elementSign, lastSign := "├───", "└───"
 		sign := elementSign
 		if isLastIndex {
 			sign = lastSign
@@ -96,7 +90,7 @@ func printBranch(out io.Writer, printFiles bool, level *int, file fs.FileInfo, i
 		}
 		_, err = out.Write([]byte(sign))
 		if err != nil {
-			return err
+			return fmt.Errorf("out.Write on level %v and with file name %s failed: %w", *level, file.Name(), err)
 		}
 	}
 	return nil
@@ -110,7 +104,7 @@ func addShift(out io.Writer, level *int, lines []bool) error {
 		}
 		_, err := out.Write([]byte(shift))
 		if err != nil {
-			return err
+			return fmt.Errorf("addShift out.Write on level %v failed: %w", *level, err)
 		}
 	}
 	return nil
@@ -119,30 +113,31 @@ func addShift(out io.Writer, level *int, lines []bool) error {
 func printDirectory(out io.Writer, printFiles bool, level *int, lines []bool, fileName string, newPath string) error {
 	_, err := out.Write([]byte(fileName + "\n"))
 	if err != nil {
-		return err
+		return fmt.Errorf("printDirectory out.Write on level %v and with file name %s failed: %w", *level, fileName, err)
 	}
 	newFiles, err := ioutil.ReadDir(newPath)
 	if err != nil {
-		return err
+		return fmt.Errorf("printDirectory ioutil.ReadDir on level %v and with file name %s failed: %w", *level, fileName, err)
 	}
 	*level += 1
 	err = fillTree(out, newPath, printFiles, level, newFiles, lines)
-	*level -= 1
-	lines = lines[:*level]
 	if err != nil {
 		return err
 	}
+	*level -= 1
+	lines = lines[:*level]
+
 	return nil
 }
 
-func printFile(out io.Writer, file fs.FileInfo) error {
-	size := strconv.FormatInt(file.Size(), 10) + "b"
+func printFile(out io.Writer, file os.FileInfo) error {
+	size := fmt.Sprintf("%vb", file.Size())
 	if file.Size() == 0 {
 		size = "empty"
 	}
 	_, err := out.Write([]byte(file.Name() + " (" + size + ")\n"))
 	if err != nil {
-		return err
+		return fmt.Errorf("printDirectory out.Write with file name %s failed: %w", file.Name(), err)
 	}
 	return nil
 }
